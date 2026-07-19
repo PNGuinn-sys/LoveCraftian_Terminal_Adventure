@@ -127,6 +127,137 @@ def test_status_output_includes_key_fields():
     assert "Rooms explored: 1/" in output
 
 
+def test_advance_dread_manifests_at_threshold():
+    from game.entities import DREAD_THRESHOLD, advance_dread
+    from game.player import Player
+
+    class AlwaysHitsRandom:
+        def random(self):
+            return 0.0  # always below any chance threshold
+
+    player = Player(location="foyer")
+    rng_stub = AlwaysHitsRandom()
+
+    manifested = False
+    for _ in range(DREAD_THRESHOLD):
+        manifested = advance_dread(player, rng_stub)
+
+    assert manifested is True
+    assert player.presence_active is True
+    assert player.dread == DREAD_THRESHOLD
+
+
+def test_reaching_out_with_all_clues_wins():
+    import main as game_main
+    from game.player import Player
+    from game.world import ITEM_TEMPLATES as items, generate_events, generate_world
+
+    rng, _ = make_rng(5)
+    rooms = generate_world(rng)
+    events = generate_events(rng)
+
+    player = Player(location="foyer")
+    player.visited.add(player.location)
+    for item_id, template in items.items():
+        if template.get("is_clue"):
+            player.add_item(item_id)
+
+    outcome = game_main.handle_command(parse("go out"), player, rooms, events, rng)
+    assert outcome == "win"
+
+
+def test_reaching_out_without_all_clues_is_blocked():
+    import main as game_main
+    from game.player import Player
+    from game.world import generate_events, generate_world
+
+    rng, _ = make_rng(5)
+    rooms = generate_world(rng)
+    events = generate_events(rng)
+
+    player = Player(location="foyer")
+    player.visited.add(player.location)
+
+    outcome = game_main.handle_command(parse("go out"), player, rooms, events, rng)
+    assert outcome == "continue"
+    assert player.location == "foyer"
+
+
+def test_caught_if_not_evading_when_presence_active():
+    import main as game_main
+    from game.player import Player
+    from game.world import generate_events, generate_world
+
+    rng, _ = make_rng(9)
+    rooms = generate_world(rng)
+    events = generate_events(rng)
+
+    player = Player(location="foyer")
+    player.presence_active = True
+
+    outcome = game_main.handle_command(parse("look"), player, rooms, events, rng)
+    assert outcome == "caught"
+
+
+def test_fleeing_resolves_presence():
+    import main as game_main
+    from game.player import Player
+    from game.world import generate_events, generate_world
+
+    rng, _ = make_rng(11)
+    rooms = generate_world(rng)
+    events = generate_events(rng)
+
+    player = Player(location="foyer")
+    player.visited.add(player.location)
+    player.presence_active = True
+    player.dread = 3
+
+    outcome = game_main.handle_command(parse("go north"), player, rooms, events, rng)
+    assert outcome == "continue"
+    assert player.presence_active is False
+    assert player.dread == 0
+    assert player.location == "corridor"
+
+
+def test_hiding_resolves_presence():
+    import main as game_main
+    from game.player import Player
+    from game.world import generate_events, generate_world
+
+    rng, _ = make_rng(13)
+    rooms = generate_world(rng)
+    events = generate_events(rng)
+
+    player = Player(location="foyer")
+    player.presence_active = True
+    player.dread = 3
+
+    outcome = game_main.handle_command(parse("hide"), player, rooms, events, rng)
+    assert outcome == "continue"
+    assert player.presence_active is False
+    assert player.dread == 0
+
+
+def test_sanity_reaching_zero_ends_game():
+    import main as game_main
+    from game.player import Player
+    from game.world import generate_events, generate_world
+
+    rng, _ = make_rng(21)
+    rooms = generate_world(rng)
+    events = generate_events(rng)
+
+    player = Player(location="foyer")
+    player.visited.add(player.location)
+    player.adjust_sanity(-97)  # sanity now 3
+    player.adjust_sanity(-10)  # clamped to 0
+
+    outcome = game_main.handle_command(parse("status"), player, rooms, events, rng)
+    assert outcome == "broken"
+    assert player.sanity == 0
+
+
 def run_all():
     tests = [v for k, v in globals().items() if k.startswith("test_")]
     for t in tests:

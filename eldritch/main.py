@@ -7,15 +7,48 @@ variants, item placement, and random events are all resolved from a
 seeded RNG at startup (see game/world.py, game/rng.py). Random by
 default, so the game plays out differently each time - but a specific
 seed can be pinned with --seed for a reproducible run.
+
+A playthrough now has real stakes: piece together the manor's story by
+finding all the clues scattered through it, then reach the front door
+to win. Sanity bottoming out, or being caught by the presence that
+stalks the house, both end the run.
 """
 
 import argparse
 
+from game.entities import advance_dread, resolve_evasion
 from game.parser import parse
 from game.player import Player
 from game.rng import make_rng
 from game.sanity import distort
 from game.world import ITEM_TEMPLATES, START_ROOM, generate_events, generate_world
+
+TURN_CONSUMING_VERBS = {"go", "look", "take", "drop", "use"}
+
+PRESENCE_MANIFEST_TEXT = "\nThe air changes. You are no longer alone in this room."
+
+CAUGHT_TEXT = (
+    "\nYou hesitate a moment too long. Something closes the distance "
+    "between you, and the manor is quiet again.\n\n"
+    "You are not found. Not by anyone who could still help."
+)
+
+SANITY_BROKEN_TEXT = (
+    "\nSomething in you gives way. The walls are breathing now, or you "
+    "are - you can no longer tell which.\n\n"
+    "You will still be found here, eventually, sitting very still in a "
+    "room that makes sense to no one but you."
+)
+
+WIN_TEXT = (
+    "\nIt fits together now - all of it. What this house was for. What "
+    "it cost the people who lived here. What is, in some sense, still "
+    "living here.\n\n"
+    "The door opens without resistance this time, as if it were only "
+    "ever waiting for you to understand. You do not look back as you "
+    "cross the threshold.\n\n"
+    "You made it out."
+)
 
 
 def match_item(target, item_ids):
@@ -28,6 +61,18 @@ def match_item(target, item_ids):
         if target == name or target == item_id or target in name.split():
             return item_id
     return None
+
+
+def clue_progress(player: Player):
+    """Return (clues_found, total_clues)."""
+    total = sum(1 for t in ITEM_TEMPLATES.values() if t.get("is_clue"))
+    found = sum(1 for i in player.inventory if ITEM_TEMPLATES[i].get("is_clue"))
+    return found, total
+
+
+def has_all_clues(player: Player) -> bool:
+    found, total = clue_progress(player)
+    return total > 0 and found >= total
 
 
 def describe_room(player: Player, rooms: dict, rng) -> None:
@@ -50,6 +95,7 @@ def describe_room(player: Player, rooms: dict, rng) -> None:
 
 def show_status(player: Player, rooms: dict) -> None:
     room = rooms[player.location]
+    found_clues, total_clues = clue_progress(player)
 
     print("\n" + "-" * 40)
     print(f"Location: {room['name']}")
@@ -61,6 +107,7 @@ def show_status(player: Player, rooms: dict) -> None:
     else:
         print("Carrying: nothing")
 
+    print(f"Clues found: {found_clues}/{total_clues}")
     print(f"Rooms explored: {len(player.visited)}/{len(rooms)}")
     print("-" * 40)
 
@@ -79,13 +126,48 @@ def check_events(player: Player, rooms: dict, events: list, rng) -> None:
                 player.adjust_sanity(effect)
 
 
-def handle_command(cmd, player: Player, rooms: dict, events: list, rng) -> bool:
-    """Execute a parsed command. Returns False if the game should stop."""
+def handle_command(cmd, player: Player, rooms: dict, events: list, rng) -> str:
+    """Execute a parsed command. Returns one of:
+    'continue', 'quit', 'win', 'caught', 'broken'."""
     room = rooms[player.location]
+    just_evaded = False
+
+    # If the presence is active, the only valid responses are to flee to
+    # another room or hide - anything else, including looking around or
+    # checking your inventory, means you're caught.
+    if player.presence_active:
+        if cmd.verb == "quit":
+            print("\nYou step back from the threshold. Some things are better left unseen.")
+            return "quit"
+
+        if cmd.verb == "hide":
+            resolve_evasion(player)
+            just_evaded = True
+            print(
+                "\nYou go still and hold your breath. After a long, "
+                "silent moment, whatever it was moves on."
+            )
+            return "continue"
+
+        can_flee = (
+            cmd.verb == "go"
+            and cmd.direction
+            and cmd.direction in room["exits"]
+            and not room["exits"][cmd.direction].get("locked")
+            and not room["exits"][cmd.direction].get("requires_all_clues")
+        )
+        if can_flee:
+            resolve_evasion(player)
+            just_evaded = True
+            print("\nYou don't wait to see what it is. You move.")
+            # Fall through to the normal 'go' handling below.
+        else:
+            print(CAUGHT_TEXT)
+            return "caught"
 
     if cmd.verb == "quit":
         print("\nYou step back from the threshold. Some things are better left unseen.")
-        return False
+        return "quit"
 
     elif cmd.verb == "look":
         describe_room(player, rooms, rng)
@@ -98,7 +180,12 @@ def handle_command(cmd, player: Player, rooms: dict, events: list, rng) -> bool:
             print("You can't go that way.")
         else:
             exit_info = room["exits"][direction]
-            if exit_info.get("locked"):
+            if exit_info.get("requires_all_clues"):
+                if has_all_clues(player):
+                    print(WIN_TEXT)
+                    return "win"
+                print(exit_info.get("locked_text", "That way is blocked."))
+            elif exit_info.get("locked"):
                 print(exit_info.get("locked_text", "That way is locked."))
             else:
                 player.location = exit_info["target"]
@@ -167,10 +254,13 @@ def handle_command(cmd, player: Player, rooms: dict, events: list, rng) -> bool:
     elif cmd.verb == "status":
         show_status(player, rooms)
 
+    elif cmd.verb == "hide":
+        print("There's nothing to hide from right now.")
+
     elif cmd.verb == "help":
         print(
             "Commands: look, go <direction>, take <item>, drop <item>, "
-            "use <item>, inventory, status, quit"
+            "use <item>, inventory, status, hide, quit"
         )
 
     elif cmd.verb == "unknown":
@@ -179,7 +269,15 @@ def handle_command(cmd, player: Player, rooms: dict, events: list, rng) -> bool:
     elif cmd.verb == "empty":
         pass
 
-    return True
+    if cmd.verb in TURN_CONSUMING_VERBS and not player.presence_active and not just_evaded:
+        if advance_dread(player, rng):
+            print(PRESENCE_MANIFEST_TEXT)
+
+    if player.sanity <= 0:
+        print(SANITY_BROKEN_TEXT)
+        return "broken"
+
+    return "continue"
 
 
 def main() -> None:
@@ -218,7 +316,8 @@ def main() -> None:
             break
 
         cmd = parse(raw)
-        running = handle_command(cmd, player, rooms, events, rng)
+        outcome = handle_command(cmd, player, rooms, events, rng)
+        running = outcome == "continue"
 
 
 if __name__ == "__main__":

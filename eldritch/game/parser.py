@@ -29,6 +29,7 @@ VERB_ALIASES = {
     "drop": "drop", "discard": "drop",
     "inventory": "inventory", "inv": "inventory", "i": "inventory",
     "use": "use", "apply": "use", "open": "use",
+    "hide": "hide", "wait": "hide", "crouch": "hide",
     "save": "save",
     "load": "load",
     "status": "status", "stats": "status", "sanity": "status", "diagnose": "status",

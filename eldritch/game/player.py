@@ -17,6 +17,8 @@ class Player:
     sanity: int = MAX_SANITY
     inventory: List[str] = field(default_factory=list)
     visited: Set[str] = field(default_factory=set)
+    dread: int = 0
+    presence_active: bool = False
 
     @property
     def sanity_tier(self) -> SanityTier:

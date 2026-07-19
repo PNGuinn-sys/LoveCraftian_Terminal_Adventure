@@ -32,6 +32,13 @@ ROOM_TEMPLATES = {
             "north": {"target": "corridor"},
             "east": {"target": "drawing_room"},
             "west": {"target": "study"},
+            "out": {
+                "requires_all_clues": True,
+                "locked_text": (
+                    "The front door won't budge. Whatever is happening "
+                    "in this house, you haven't understood it yet."
+                ),
+            },
         },
     },
     "drawing_room": {
@@ -132,9 +139,44 @@ ITEM_TEMPLATES = {
         "valid_rooms": ["study", "foyer", "drawing_room"],
         "on_take_sanity": -15,
         "on_take_text": (
-            "The handwriting grows more frantic toward the end. The "
-            "last legible line is your own name."
+            "Most of it is ruined, but one entry survives: 'It listens "
+            "when we speak of leaving. We have stopped speaking of "
+            "leaving.'"
         ),
+        "is_clue": True,
+    },
+    "torn_letter": {
+        "name": "torn letter",
+        "description": "Half a letter, the rest burned away at the edges.",
+        "valid_rooms": ["study", "library", "corridor"],
+        "on_take_sanity": -10,
+        "on_take_text": (
+            "'...told them not to dig beneath the cellar. They didn't "
+            "listen. None of us have felt quite whole since.'"
+        ),
+        "is_clue": True,
+    },
+    "childs_drawing": {
+        "name": "child's drawing",
+        "description": "A crayon drawing, curling at the corners.",
+        "valid_rooms": ["attic", "drawing_room", "foyer"],
+        "on_take_sanity": -10,
+        "on_take_text": (
+            "A child's crayon drawing of this house - and of a tall, "
+            "thin shape standing in every window at once."
+        ),
+        "is_clue": True,
+    },
+    "family_photograph": {
+        "name": "family photograph",
+        "description": "A formal portrait, slightly out of focus.",
+        "valid_rooms": ["cellar", "library", "corridor"],
+        "on_take_sanity": -10,
+        "on_take_text": (
+            "A family of five, posed stiffly. You count them twice, "
+            "certain you're miscounting. There are six chairs."
+        ),
+        "is_clue": True,
     },
 }
 
