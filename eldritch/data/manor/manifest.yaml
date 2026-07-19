@@ -1,0 +1,9 @@
+# Manifest for the "manor" scenario.
+# title/start_room are required; intro is optional flavor text printed
+# once, before the first room description.
+
+title: "The Manor"
+start_room: foyer
+intro: >-
+  You don't remember agreeing to come here. You remember only that the
+  invitation felt impossible to refuse.

@@ -1,0 +1,56 @@
+# Items for the "manor" scenario.
+#
+# Each item needs: name, valid_rooms (one is picked at random per
+# playthrough as where it spawns). Optional: description, on_take_sanity
+# (sanity delta applied when picked up), on_take_text (flavor shown when
+# picked up), is_clue (counts toward the win condition).
+
+brass_key:
+  name: "brass key"
+  description: "An old brass key, warm to the touch despite the cold."
+  valid_rooms: [study, drawing_room, library]
+  on_take_sanity: -10
+  on_take_text: >-
+    It's warmer than a piece of metal has any right to be. You
+    pocket it anyway.
+
+old_journal:
+  name: "old journal"
+  description: "A water-damaged journal, its later pages illegible."
+  valid_rooms: [study, foyer, drawing_room]
+  on_take_sanity: -15
+  on_take_text: >-
+    Most of it is ruined, but one entry survives: 'It listens
+    when we speak of leaving. We have stopped speaking of
+    leaving.'
+  is_clue: true
+
+torn_letter:
+  name: "torn letter"
+  description: "Half a letter, the rest burned away at the edges."
+  valid_rooms: [study, library, corridor]
+  on_take_sanity: -10
+  on_take_text: >-
+    '...told them not to dig beneath the cellar. They didn't
+    listen. None of us have felt quite whole since.'
+  is_clue: true
+
+childs_drawing:
+  name: "child's drawing"
+  description: "A crayon drawing, curling at the corners."
+  valid_rooms: [attic, drawing_room, foyer]
+  on_take_sanity: -10
+  on_take_text: >-
+    A child's crayon drawing of this house - and of a tall,
+    thin shape standing in every window at once.
+  is_clue: true
+
+family_photograph:
+  name: "family photograph"
+  description: "A formal portrait, slightly out of focus."
+  valid_rooms: [cellar, library, corridor]
+  on_take_sanity: -10
+  on_take_text: >-
+    A family of five, posed stiffly. You count them twice,
+    certain you're miscounting. There are six chairs.
+  is_clue: true

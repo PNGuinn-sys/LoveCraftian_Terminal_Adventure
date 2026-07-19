@@ -41,31 +41,40 @@ already know too much.
 ## Tech Stack
 
 - **Python 3.10+**
-- Standard library only to start — no dependencies required to run
-- Optional later additions (e.g. `rich` or `colorama` for terminal color)
-  if/when we want fancier presentation
+- **PyYAML** — the only dependency. Adventure content (rooms, items,
+  events) lives in hand-authored YAML data files rather than Python code.
 
 ## Project Structure
 
 ```
 eldritch/
-├── main.py                # Entry point — game loop, win/lose, commands
-├── game/
+├── main.py                # Entry point — loads a scenario, runs the game loop
+├── game/                  # The engine - generic, has no story content in it
 │   ├── __init__.py
-│   ├── player.py           # Player state: location, sanity, inventory
-│   ├── parser.py            # Command input parsing
-│   ├── sanity.py             # Sanity tiers & narration distortion
-│   ├── entities.py            # The stalking presence (dread system)
-│   ├── world.py                 # Room/item/event templates + world generation
+│   ├── content_loader.py   # Loads + validates a scenario's YAML files
+│   ├── player.py            # Player state: location, sanity, inventory
+│   ├── parser.py              # Command input parsing
+│   ├── sanity.py               # Sanity tiers & narration distortion
+│   ├── entities.py              # The stalking presence (dread system)
+│   ├── world.py                  # Resolves a scenario's templates into one playthrough
 │   └── rng.py                     # Seeded RNG for reproducible randomness
+├── data/                  # Adventure content lives here, not in code
+│   └── manor/               # The first scenario ("The Manor")
+│       ├── manifest.yaml     # Title, intro text, starting room
+│       ├── rooms.yaml         # Rooms: description variants, exits
+│       ├── items.yaml          # Items: placement pools, sanity effects
+│       └── events.yaml          # Random one-time events
 ├── tests/
-│   └── test_engine.py      # Parser, sanity, world-gen, and win/lose tests
-├── requirements.txt        # Empty — stdlib only, still true
+│   └── test_engine.py      # Parser, sanity, loader/validator, world-gen, win/lose
+├── requirements.txt        # PyYAML
 └── README.md
 ```
 
-Not yet started: `save_load.py`, a `data/` folder for externalized content
-(rooms/items currently live directly in `world.py`).
+Adding a new adventure means adding a new folder under `data/` with those
+same four files — the engine itself doesn't need to change. Run one with
+`python main.py --scenario <folder-name>`.
+
+Not yet started: `save_load.py`.
 
 ## Getting Started
 
@@ -76,14 +85,19 @@ Not yet started: `save_load.py`, a `data/` folder for externalized content
 ```bash
 git clone <repo-url>
 cd eldritch
-pip install -r requirements.txt   # currently empty — stdlib only
+pip install -r requirements.txt   # installs PyYAML
 ```
 
 ### Running the Game
 ```bash
-python main.py                        # a fresh, randomized run
-python main.py --seed 42 --show-seed  # a reproducible run, for testing
+python main.py                                  # a fresh, randomized run of "manor"
+python main.py --scenario manor                 # same thing, explicit
+python main.py --seed 42 --show-seed            # a reproducible run, for testing
 ```
+
+If a scenario's data files have a mistake in them (a typo'd room name, a
+locked door with no key, etc.), the game will refuse to start and print
+exactly what's wrong, rather than crashing mid-playthrough.
 
 ### Running the Tests
 ```bash
@@ -117,8 +131,11 @@ manifests and your next move isn't fleeing or hiding.
 - [x] Sanity mechanic (narration distortion + gameplay consequence via the presence)
 - [x] Inventory & a first puzzle (locked door)
 - [x] First playable chapter — win and lose both work end to end
+- [x] Content split into data files — adventures are now YAML, not Python;
+      engine validates them at startup
 - [ ] Save/load system
 - [ ] More rooms, more clues, more puzzles — the manor is still small
+- [ ] A second scenario, to prove the engine really is adventure-agnostic
 - [ ] Additional/varied endings beyond win/caught/broken
 - [ ] Polish — styling, pacing
 

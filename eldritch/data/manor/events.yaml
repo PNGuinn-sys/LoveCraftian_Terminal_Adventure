@@ -1,0 +1,23 @@
+# Random one-time events for the "manor" scenario.
+#
+# Each event needs: id, rooms (which rooms it can trigger in), chance
+# (0-1 probability rolled on room entry), text. Optional: sanity_effect.
+# Each fires at most once per playthrough.
+
+- id: creaking_floor
+  rooms: [corridor, library, attic]
+  chance: 0.35
+  text: "A floorboard creaks behind you. When you turn, nothing is there."
+  sanity_effect: -5
+
+- id: portrait_eyes
+  rooms: [drawing_room]
+  chance: 0.5
+  text: "For a moment, you'd swear the portrait's eyes had moved to follow you."
+  sanity_effect: -10
+
+- id: distant_voice
+  rooms: [cellar, attic]
+  chance: 0.3
+  text: "A voice, too far away to place, says something that sounds like your name."
+  sanity_effect: -10

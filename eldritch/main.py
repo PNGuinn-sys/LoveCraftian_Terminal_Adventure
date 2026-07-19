@@ -2,26 +2,37 @@
 Eldritch - a Lovecraftian terminal adventure.
 Entry point / game loop.
 
-Each run generates its own version of the manor: room description
+The engine itself (this file, plus game/) is generic - all actual story
+content (rooms, items, events) lives in data files under data/<scenario>/
+and is loaded and validated at startup (see game/content_loader.py).
+Pick a scenario with --scenario (defaults to "manor").
+
+Each run generates its own version of the world: room description
 variants, item placement, and random events are all resolved from a
 seeded RNG at startup (see game/world.py, game/rng.py). Random by
 default, so the game plays out differently each time - but a specific
 seed can be pinned with --seed for a reproducible run.
 
-A playthrough now has real stakes: piece together the manor's story by
-finding all the clues scattered through it, then reach the front door
-to win. Sanity bottoming out, or being caught by the presence that
-stalks the house, both end the run.
+A playthrough has real stakes: piece together the scenario's story by
+finding all its clues, then reach the exit to win. Sanity bottoming
+out, or being caught by the presence that stalks the world, both end
+the run.
 """
 
 import argparse
+import sys
+from pathlib import Path
 
+from game.content_loader import ScenarioError, load_scenario
 from game.entities import advance_dread, resolve_evasion
 from game.parser import parse
 from game.player import Player
 from game.rng import make_rng
 from game.sanity import distort
-from game.world import ITEM_TEMPLATES, START_ROOM, generate_events, generate_world
+from game.world import generate_events, generate_world
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+DATA_DIR = PROJECT_ROOT / "data"
 
 TURN_CONSUMING_VERBS = {"go", "look", "take", "drop", "use"}
 
@@ -29,7 +40,7 @@ PRESENCE_MANIFEST_TEXT = "\nThe air changes. You are no longer alone in this roo
 
 CAUGHT_TEXT = (
     "\nYou hesitate a moment too long. Something closes the distance "
-    "between you, and the manor is quiet again.\n\n"
+    "between you, and the world is quiet again.\n\n"
     "You are not found. Not by anyone who could still help."
 )
 
@@ -41,41 +52,41 @@ SANITY_BROKEN_TEXT = (
 )
 
 WIN_TEXT = (
-    "\nIt fits together now - all of it. What this house was for. What "
-    "it cost the people who lived here. What is, in some sense, still "
-    "living here.\n\n"
-    "The door opens without resistance this time, as if it were only "
+    "\nIt fits together now - all of it. What this place was for. What "
+    "it cost the people who were here. What is, in some sense, still "
+    "here.\n\n"
+    "The way out opens without resistance this time, as if it were only "
     "ever waiting for you to understand. You do not look back as you "
     "cross the threshold.\n\n"
     "You made it out."
 )
 
 
-def match_item(target, item_ids):
+def match_item(target, item_ids, scenario):
     """Find an item id in item_ids matching the player's typed target,
     by full name, item id, or a single word from the name."""
     if not target:
         return None
     for item_id in item_ids:
-        name = ITEM_TEMPLATES[item_id]["name"]
+        name = scenario.items[item_id]["name"]
         if target == name or target == item_id or target in name.split():
             return item_id
     return None
 
 
-def clue_progress(player: Player):
+def clue_progress(player: Player, scenario):
     """Return (clues_found, total_clues)."""
-    total = sum(1 for t in ITEM_TEMPLATES.values() if t.get("is_clue"))
-    found = sum(1 for i in player.inventory if ITEM_TEMPLATES[i].get("is_clue"))
+    total = sum(1 for t in scenario.items.values() if t.get("is_clue"))
+    found = sum(1 for i in player.inventory if scenario.items[i].get("is_clue"))
     return found, total
 
 
-def has_all_clues(player: Player) -> bool:
-    found, total = clue_progress(player)
+def has_all_clues(player: Player, scenario) -> bool:
+    found, total = clue_progress(player, scenario)
     return total > 0 and found >= total
 
 
-def describe_room(player: Player, rooms: dict, rng) -> None:
+def describe_room(player: Player, rooms: dict, scenario, rng) -> None:
     room = rooms[player.location]
     text = distort(room["description"], player.sanity, rng)
 
@@ -89,20 +100,20 @@ def describe_room(player: Player, rooms: dict, rng) -> None:
         print(f"Exits: {', '.join(exit_labels)}")
 
     if room["items"]:
-        names = [ITEM_TEMPLATES[i]["name"] for i in room["items"]]
+        names = [scenario.items[i]["name"] for i in room["items"]]
         print(f"You notice: {', '.join(names)}")
 
 
-def show_status(player: Player, rooms: dict) -> None:
+def show_status(player: Player, rooms: dict, scenario) -> None:
     room = rooms[player.location]
-    found_clues, total_clues = clue_progress(player)
+    found_clues, total_clues = clue_progress(player, scenario)
 
     print("\n" + "-" * 40)
     print(f"Location: {room['name']}")
     print(f"Sanity: {player.sanity}/100 ({player.sanity_tier.value})")
 
     if player.inventory:
-        names = [ITEM_TEMPLATES[i]["name"] for i in player.inventory]
+        names = [scenario.items[i]["name"] for i in player.inventory]
         print(f"Carrying: {', '.join(names)}")
     else:
         print("Carrying: nothing")
@@ -126,7 +137,7 @@ def check_events(player: Player, rooms: dict, events: list, rng) -> None:
                 player.adjust_sanity(effect)
 
 
-def handle_command(cmd, player: Player, rooms: dict, events: list, rng) -> str:
+def handle_command(cmd, player: Player, rooms: dict, events: list, rng, scenario) -> str:
     """Execute a parsed command. Returns one of:
     'continue', 'quit', 'win', 'caught', 'broken'."""
     room = rooms[player.location]
@@ -170,7 +181,7 @@ def handle_command(cmd, player: Player, rooms: dict, events: list, rng) -> str:
         return "quit"
 
     elif cmd.verb == "look":
-        describe_room(player, rooms, rng)
+        describe_room(player, rooms, scenario, rng)
 
     elif cmd.verb == "go":
         direction = cmd.direction
@@ -181,7 +192,7 @@ def handle_command(cmd, player: Player, rooms: dict, events: list, rng) -> str:
         else:
             exit_info = room["exits"][direction]
             if exit_info.get("requires_all_clues"):
-                if has_all_clues(player):
+                if has_all_clues(player, scenario):
                     print(WIN_TEXT)
                     return "win"
                 print(exit_info.get("locked_text", "That way is blocked."))
@@ -190,12 +201,12 @@ def handle_command(cmd, player: Player, rooms: dict, events: list, rng) -> str:
             else:
                 player.location = exit_info["target"]
                 player.visited.add(player.location)
-                describe_room(player, rooms, rng)
+                describe_room(player, rooms, scenario, rng)
                 check_events(player, rooms, events, rng)
 
     elif cmd.verb == "inventory":
         if player.inventory:
-            names = [ITEM_TEMPLATES[i]["name"] for i in player.inventory]
+            names = [scenario.items[i]["name"] for i in player.inventory]
             print("You are carrying: " + ", ".join(names))
         else:
             print("You are carrying nothing.")
@@ -204,13 +215,13 @@ def handle_command(cmd, player: Player, rooms: dict, events: list, rng) -> str:
         if not cmd.target:
             print("Take what?")
         else:
-            matched = match_item(cmd.target, room["items"])
+            matched = match_item(cmd.target, room["items"], scenario)
             if not matched:
                 print("You don't see that here.")
             else:
                 room["items"].remove(matched)
                 player.add_item(matched)
-                template = ITEM_TEMPLATES[matched]
+                template = scenario.items[matched]
                 print(f"You take the {template['name']}.")
                 sanity_effect = template.get("on_take_sanity")
                 if sanity_effect:
@@ -223,19 +234,19 @@ def handle_command(cmd, player: Player, rooms: dict, events: list, rng) -> str:
         if not cmd.target:
             print("Drop what?")
         else:
-            matched = match_item(cmd.target, player.inventory)
+            matched = match_item(cmd.target, player.inventory, scenario)
             if not matched:
                 print("You aren't carrying that.")
             else:
                 player.remove_item(matched)
                 room["items"].append(matched)
-                print(f"You set down the {ITEM_TEMPLATES[matched]['name']}.")
+                print(f"You set down the {scenario.items[matched]['name']}.")
 
     elif cmd.verb == "use":
         if not cmd.target:
             print("Use what?")
         else:
-            matched = match_item(cmd.target, player.inventory)
+            matched = match_item(cmd.target, player.inventory, scenario)
             if not matched:
                 print("You aren't carrying that.")
             else:
@@ -252,7 +263,7 @@ def handle_command(cmd, player: Player, rooms: dict, events: list, rng) -> str:
         print("Saving isn't wired up yet - that's coming in a later step.")
 
     elif cmd.verb == "status":
-        show_status(player, rooms)
+        show_status(player, rooms, scenario)
 
     elif cmd.verb == "hide":
         print("There's nothing to hide from right now.")
@@ -283,6 +294,10 @@ def handle_command(cmd, player: Player, rooms: dict, events: list, rng) -> str:
 def main() -> None:
     arg_parser = argparse.ArgumentParser(description="Eldritch - a terminal adventure")
     arg_parser.add_argument(
+        "--scenario", default="manor",
+        help="Which adventure to load from data/ (default: manor)",
+    )
+    arg_parser.add_argument(
         "--seed", type=int, default=None,
         help="Pin a specific world seed for a reproducible run",
     )
@@ -292,20 +307,28 @@ def main() -> None:
     )
     args = arg_parser.parse_args()
 
+    try:
+        scenario = load_scenario(DATA_DIR / args.scenario)
+    except ScenarioError as e:
+        print(f"Could not load scenario '{args.scenario}':\n{e}", file=sys.stderr)
+        sys.exit(1)
+
     rng, seed = make_rng(args.seed)
-    rooms = generate_world(rng)
-    events = generate_events(rng)
-    player = Player(location=START_ROOM)
+    rooms = generate_world(scenario, rng)
+    events = generate_events(scenario, rng)
+    player = Player(location=scenario.start_room)
     player.visited.add(player.location)
 
     print("=" * 60)
     print("ELDRITCH")
-    print("a terminal adventure")
+    print(scenario.title)
     print("=" * 60)
     if args.show_seed:
         print(f"[seed: {seed}]")
+    if scenario.intro:
+        print(f"\n{scenario.intro}")
 
-    describe_room(player, rooms, rng)
+    describe_room(player, rooms, scenario, rng)
 
     running = True
     while running:
@@ -316,7 +339,7 @@ def main() -> None:
             break
 
         cmd = parse(raw)
-        outcome = handle_command(cmd, player, rooms, events, rng)
+        outcome = handle_command(cmd, player, rooms, events, rng, scenario)
         running = outcome == "continue"
 
 
